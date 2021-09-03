@@ -4,12 +4,17 @@
  */
 package io.strimzi.kafka.oauth.services;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Map;
 
 /**
  * This class contains singleton components shared among Kafka Broker sessions
  */
 public class Services {
+
+    private static final Logger log = LoggerFactory.getLogger(Services.class);
 
     private static Services services;
 
@@ -22,6 +27,7 @@ public class Services {
     private Credentials credentials = new Credentials();
 
     public static void configure(Map<String, ?> configs) {
+        log.debug("Configuring Services: {}", configs);
         services = new Services();
     }
 

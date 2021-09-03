@@ -238,5 +238,6 @@ public class JaasServerOauthOverPlainValidatorCallbackHandler extends JaasServer
                 token.principalName(), (BearerTokenWithPayload) token);
 
         Services.getInstance().getCredentials().storeCredentials(username, kafkaPrincipal);
+        log.debug("Principal stored in credentials under key {} (principal={})", username, kafkaPrincipal);
     }
 }

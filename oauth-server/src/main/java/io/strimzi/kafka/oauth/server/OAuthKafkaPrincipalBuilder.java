@@ -16,14 +16,18 @@ import org.apache.kafka.common.security.authenticator.DefaultKafkaPrincipalBuild
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer;
 import org.apache.kafka.common.security.plain.internals.PlainSaslServer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.security.sasl.SaslServer;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +48,13 @@ import java.util.Map;
  * </p>
  */
 public class OAuthKafkaPrincipalBuilder extends DefaultKafkaPrincipalBuilder implements Configurable {
+
+    private static final Map<String, Logger> LOGS = new HashMap<>();
+
+    static Logger logger(String listenerName) {
+        return LOGS.computeIfAbsent(listenerName, key ->
+            LoggerFactory.getLogger(String.format("%s.%s", OAuthKafkaPrincipalBuilder.class.getName(), listenerName)));
+    }
 
     private static final SetAccessibleAction SET_PRINCIPAL_MAPPER = SetAccessibleAction.newInstance();
 
@@ -122,6 +133,9 @@ public class OAuthKafkaPrincipalBuilder extends DefaultKafkaPrincipalBuilder imp
 
     @Override
     public KafkaPrincipal build(AuthenticationContext context) {
+        final String listenerName = context.listenerName();
+        final Logger log = logger(listenerName);
+
         if (context instanceof SaslAuthenticationContext) {
             SaslServer saslServer = ((SaslAuthenticationContext) context).server();
             if (saslServer instanceof OAuthBearerSaslServer) {
@@ -133,7 +147,13 @@ public class OAuthKafkaPrincipalBuilder extends DefaultKafkaPrincipalBuilder imp
                     OAuthKafkaPrincipal kafkaPrincipal = new OAuthKafkaPrincipal(KafkaPrincipal.USER_TYPE,
                             server.getAuthorizationID(), token);
 
+                    if (log.isDebugEnabled()) {
+                        log.debug("Constructed new OAuthKafkaPrincipal: {}", kafkaPrincipal);
+                    }
+
                     return kafkaPrincipal;
+                } else if (log.isDebugEnabled()) {
+                    log.debug("Unhandled mechanism for OAuthBearerSaslServer: {}", server.getMechanismName());
                 }
             } else if (saslServer instanceof PlainSaslServer) {
                 PlainSaslServer server = (PlainSaslServer) saslServer;
@@ -142,18 +162,44 @@ public class OAuthKafkaPrincipalBuilder extends DefaultKafkaPrincipalBuilder imp
                 Principals principals = Services.getInstance().getPrincipals();
                 OAuthKafkaPrincipal principal = (OAuthKafkaPrincipal) Services.getInstance().getCredentials().takeCredentials(server.getAuthorizationID());
                 if (principal != null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("principal found in credentials with key: {}", server.getAuthorizationID());
+                    }
+
                     principals.putPrincipal(saslServer, principal);
                     return principal;
+                } else if (log.isDebugEnabled()) {
+                    log.debug("principal not found in credentials with key: {}", server.getAuthorizationID());
                 }
 
                 // if principal is required by request / thread other than the one that was just authenticated
                 principal = (OAuthKafkaPrincipal) principals.getPrincipal(saslServer);
                 if (principal != null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("principal found in `Principals` with key: {}", saslServer);
+                    }
+
                     return principal;
+                } else if (log.isDebugEnabled()) {
+                    log.debug("principal not found in `Principals` with key: {}", saslServer);
+                }
+            } else if (log.isDebugEnabled()) {
+                if (saslServer != null) {
+                    log.debug("saslServer was an unhandled type, class={}", saslServer.getClass().getName());
+                } else {
+                    log.debug("saslServer was null");
                 }
             }
+        } else if (log.isDebugEnabled()) {
+            log.debug("context was not a SaslAuthenticationContext, class={}", context.getClass().getName());
         }
 
-        return super.build(context);
+        KafkaPrincipal defaultPrincipal = super.build(context);
+
+        if (log.isDebugEnabled()) {
+            log.debug("Default KafkaPrincipal returned: {}", defaultPrincipal);
+        }
+
+        return defaultPrincipal;
     }
 }

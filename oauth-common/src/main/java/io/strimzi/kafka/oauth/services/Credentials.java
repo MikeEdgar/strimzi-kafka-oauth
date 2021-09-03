@@ -5,6 +5,8 @@
 package io.strimzi.kafka.oauth.services;
 
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -14,6 +16,8 @@ import java.util.Map;
  * A mechanism for OAuth over PLAIN to associate credentials with the PlainSaslServer
  */
 public class Credentials {
+
+    private static final Logger log = LoggerFactory.getLogger(Credentials.class);
 
     /**
      * There seems to be no way to associate a principal with PlainSaslServer at authentication phase.
@@ -31,6 +35,7 @@ public class Credentials {
      * @param principal The OAuthKafkaPrincipal containing the validated token
      */
     public synchronized void storeCredentials(String clientId, KafkaPrincipal principal) {
+        log.debug("Storing principal {} under key `{}`", principal, clientId);
         LinkedList<KafkaPrincipal> queue = validatedCredentials.computeIfAbsent(clientId, k -> new LinkedList<>());
         queue.add(principal);
     }
@@ -42,14 +47,21 @@ public class Credentials {
      * @return Stored OAuthKafkaPrincipal
      */
     public synchronized KafkaPrincipal takeCredentials(String clientId) {
+        if (log.isDebugEnabled()) {
+            StackTraceElement[] callTrace = Thread.currentThread().getStackTrace();
+            log.debug("Looking up credentials by key `{}`, called by {}#{}:{}", clientId, callTrace[2].getClassName(), callTrace[2].getMethodName(), callTrace[2].getLineNumber());
+        }
         LinkedList<KafkaPrincipal> queue = validatedCredentials.get(clientId);
         if (queue == null) {
+            log.debug("Credentials for key `{}` were null", clientId);
             return null;
         }
 
         KafkaPrincipal result = queue.poll();
+        log.debug("First Principal with key `{}` is {}", clientId, result);
 
         if (queue.size() == 0) {
+            log.debug("No additional credentials in queue for key `{}`", clientId);
             validatedCredentials.remove(clientId);
         }
 
